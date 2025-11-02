@@ -1,4 +1,4 @@
-// src/services/api.js - FIXED VERSION
+// src/services/api.js - COMPLETE CORRECTED VERSION
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // Helper to get auth headers
@@ -8,6 +8,11 @@ const getAuthHeaders = () => {
     'Content-Type': 'application/json',
     ...(token && { 'Authorization': `Bearer ${token}` })
   };
+};
+
+// Helper to get token
+const getToken = () => {
+  return localStorage.getItem('access_token');
 };
 
 // Custom error class
@@ -60,7 +65,7 @@ const fetchWithRetry = async (url, options, retries = 2) => {
   } catch (error) {
     if (retries > 0 && error.status >= 500) {
       console.log(`Retrying... ${retries} attempts left`);
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s
+      await new Promise(resolve => setTimeout(resolve, 1000));
       return fetchWithRetry(url, options, retries - 1);
     }
     throw error;
@@ -172,13 +177,20 @@ export const walletAPI = {
   },
 
   // Pesapay deposit
-  deposit: async (amount, phone, currency = 'USD') => {
+  deposit: async (amount, phone, currency = 'KES') => {
     try {
-      return await fetchWithRetry(`${API_BASE_URL}/wallet/deposit`, {
+      console.log('📤 Sending deposit request:', { amount, phone, currency });
+      const response = await fetchWithRetry(`${API_BASE_URL}/wallet/deposit`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ amount, phone, currency })
+        body: JSON.stringify({ 
+          amount: parseFloat(amount),
+          phone: phone,
+          currency: currency
+        })
       });
+      console.log('📥 Deposit response:', response);
+      return response;
     } catch (error) {
       console.error('Deposit error:', error);
       throw error;
@@ -188,10 +200,13 @@ export const walletAPI = {
   // Check Pesapay payment status
   checkPaymentStatus: async (reference) => {
     try {
-      return await fetchWithRetry(
+      console.log('🔍 Checking payment status for:', reference);
+      const response = await fetchWithRetry(
         `${API_BASE_URL}/wallet/payment-status/${reference}`,
         { headers: getAuthHeaders() }
       );
+      console.log('📊 Payment status response:', response);
+      return response;
     } catch (error) {
       console.error('Check payment status error:', error);
       throw error;
@@ -210,8 +225,24 @@ export const walletAPI = {
       throw error;
     }
   },
+  
+  // Add to walletAPI object in api.js
+  getChartData: async (period = 'monthly') => {
+    try {
+      console.log('📊 Fetching chart data for period:', period);
+      const response = await fetchWithRetry(
+        `${API_BASE_URL}/wallet/chart-data?period=${period}`,
+        { headers: getAuthHeaders() }
+      );
+      console.log('📈 Chart data response:', response);
+      return response;
+    } catch (error) {
+      console.error('Get chart data error:', error);
+      throw error;
+    }
+  },
 
-  // Keep this for backward compatibility (redirects to new endpoint)
+  // Keep this for backward compatibility
   checkTransactionStatus: async (reference) => {
     return walletAPI.checkPaymentStatus(reference);
   }
@@ -542,6 +573,7 @@ export default {
   transaction: transactionAPI,
   beneficiary: beneficiaryAPI,
   admin: adminAPI,
+  notification: notificationAPI,
   formatCurrency,
   validateAmount,
   validatePhone

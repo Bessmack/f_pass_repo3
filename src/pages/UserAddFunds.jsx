@@ -1,4 +1,4 @@
-// src/pages/UserAddFunds.jsx - PESAPAY VERSION
+// src/pages/UserAddFunds.jsx - CORRECTED PESAPAY VERSION
 import React, { useState, useEffect } from "react";
 import { FaCreditCard, FaUniversity, FaMobileAlt, FaCheckCircle, FaArrowLeft, FaSpinner } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
@@ -8,7 +8,7 @@ import { useAuth } from "../context/AuthContext";
 const AddFunds = () => {
   const [amount, setAmount] = useState("");
   const [phone, setPhone] = useState("");
-  const [currency, setCurrency] = useState("USD"); // New for Pesapay
+  const [currency, setCurrency] = useState("KES"); // Default to KES for M-Pesa
   const [method, setMethod] = useState(null);
   const [loading, setLoading] = useState(false);
   const [hoveredPreset, setHoveredPreset] = useState(null);
@@ -18,7 +18,7 @@ const AddFunds = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('success');
   const [error, setError] = useState('');
-  const [paymentData, setPaymentData] = useState(null); // New for Pesapay polling
+  const [paymentData, setPaymentData] = useState(null);
   const navigate = useNavigate();
   const { user, refreshWallet } = useAuth();
 
@@ -27,7 +27,7 @@ const AddFunds = () => {
   const methods = [
     { 
       id: "mobile", 
-      name: "Mobile Money (Pesapay)", // Updated name
+      name: "Mobile Money (Pesapay)", 
       icon: <FaMobileAlt size={28} color="#2563eb" />, 
       fee: 0 
     },
@@ -42,7 +42,8 @@ const AddFunds = () => {
 
   // Poll for Pesapay payment status
   useEffect(() => {
-    if (paymentData) {
+    if (paymentData && paymentData.reference) {
+      console.log('🔄 Starting polling for:', paymentData.reference);
       startPolling(paymentData.reference);
     }
   }, [paymentData]);
@@ -114,42 +115,56 @@ const AddFunds = () => {
           return;
         }
 
+        console.log('💰 [FRONTEND] Sending Pesapay request:', {
+          amount: parseFloat(amount),
+          phone: phoneValidation.formatted,
+          currency: currency
+        });
+
         const response = await walletAPI.deposit(
           parseFloat(amount), 
           phoneValidation.formatted,
           currency
         );
         
+        console.log('🔍 [FRONTEND] Pesapay response:', response);
+        
         if (response.success) {
-          showToastMessage(
-            `✅ Payment initiated! Redirecting to Pesapay...`,
-            'success'
-          );
+          showToastMessage('✅ Payment initiated! Opening Pesapay...', 'success');
           
           // Store payment data for polling
-          setPaymentData(response);
+          setPaymentData({
+            reference: response.reference,
+            transaction_id: response.transaction_id
+          });
           
-          // Redirect to Pesapay payment page
-          if (response.payment_url) {
-            window.open(response.payment_url, '_blank');
+          // Open Pesapal in new tab
+          if (response.redirect_url) {
+            console.log('🔗 Opening Pesapay URL:', response.redirect_url);
+            const pesapalWindow = window.open(response.redirect_url, '_blank');
+            
+            // Check if popup was blocked
+            setTimeout(() => {
+              if (!pesapalWindow || pesapalWindow.closed) {
+                console.log('⚠️ Popup blocked, offering manual redirect');
+                if (confirm('Pesapay window was blocked. Would you like to be redirected to Pesapay?')) {
+                  window.location.href = response.redirect_url;
+                }
+              }
+            }, 1000);
           }
           
           setShowModal(false);
-          setAmount('');
-          setPhone(user?.phone || '');
         } else {
           showToastMessage(response.error || 'Payment initiation failed', 'error');
         }
       } else {
-        // Other payment methods (unchanged)
+        // Other payment methods
         const response = await walletAPI.addFunds(parseFloat(amount), '', method.id);
         
         if (response.success) {
           showToastMessage(`✅ Successfully added ${formatCurrency(amount)}!`, 'success');
-          
-          // Refresh wallet balance
           await refreshWallet();
-          
           setShowModal(false);
           setAmount('');
         } else {
@@ -166,33 +181,52 @@ const AddFunds = () => {
   };
 
   const startPolling = async (reference, attempts = 0) => {
-    if (attempts >= 20) { // Stop after 20 attempts (100 seconds)
+    console.log(`🔄 Polling attempt ${attempts + 1}/30 for:`, reference);
+    
+    if (attempts >= 30) {
+      console.log('⏰ Polling timeout');
       showToastMessage('Payment timeout. Please check your Pesapay account.', 'error');
       setPaymentData(null);
       return;
     }
 
-    setTimeout(async () => {
-      try {
-        const response = await walletAPI.checkPaymentStatus(reference);
-        
+    try {
+      const response = await walletAPI.checkPaymentStatus(reference);
+      
+      console.log('📊 Status check:', {
+        status: response.status,
+        pesapal_status: response.pesapal_status_code,
+        success: response.success
+      });
+      
+      if (response.success) {
         if (response.status === 'completed') {
+          console.log('✅ Payment completed via polling');
           showToastMessage('✅ Payment completed successfully!', 'success');
           await refreshWallet();
           setPaymentData(null);
+          setAmount('');
+          setPhone(user?.phone || '');
+          return;
         } else if (response.status === 'failed') {
+          console.log('❌ Payment failed via polling');
           showToastMessage('❌ Payment failed or was cancelled', 'error');
           setPaymentData(null);
-        } else {
-          // Still pending, poll again
-          startPolling(reference, attempts + 1);
+          return;
         }
-      } catch (err) {
-        console.error('Status check error:', err);
-        // Continue polling on error
-        startPolling(reference, attempts + 1);
       }
-    }, 5000); // Check every 5 seconds
+      
+      // Still pending, continue polling
+      if (attempts < 30) {
+        setTimeout(() => startPolling(reference, attempts + 1), 5000);
+      }
+    } catch (err) {
+      console.error('Status check error:', err);
+      // Continue polling on network errors
+      if (attempts < 30) {
+        setTimeout(() => startPolling(reference, attempts + 1), 5000);
+      }
+    }
   };
 
   const showToastMessage = (message, type = 'success') => {
@@ -202,7 +236,13 @@ const AddFunds = () => {
     setTimeout(() => setShowToast(false), 5000);
   };
 
-  const formatCurrency = (val) => `$${parseFloat(val || 0).toFixed(2)}`;
+  const formatCurrency = (val) => {
+    const num = parseFloat(val || 0);
+    if (currency === 'KES') {
+      return `KSh${num.toFixed(2)}`;
+    }
+    return `$${num.toFixed(2)}`;
+  };
 
   const numericAmount = parseFloat(amount) || 0;
   const fee = method ? (numericAmount * method.fee) / 100 : 0;
@@ -518,12 +558,14 @@ const AddFunds = () => {
               onClick={() => handlePreset(val)}
               style={styles.presetBtn(parseFloat(amount) === val, hoveredPreset === i)}
             >
-              ${val}
+              {currency === 'KES' ? `KSh${val}` : `$${val}`}
             </button>
           ))}
         </div>
         <div style={styles.inputWrapper}>
-          <span style={styles.currencySymbol}>$</span>
+          <span style={styles.currencySymbol}>
+            {currency === 'KES' ? 'KSh' : '$'}
+          </span>
           <input
             type="text"
             placeholder="Enter custom amount"
@@ -533,7 +575,7 @@ const AddFunds = () => {
           />
         </div>
         
-        {/* Currency Selection for Pesapay */}
+        {/* Currency & Phone for Pesapay */}
         {method?.id === 'mobile' && (
           <>
             <div style={styles.inputWrapper}>
@@ -542,7 +584,8 @@ const AddFunds = () => {
                 onChange={handleCurrencyChange}
                 style={styles.select}
               >
-                <option value="KES">KES</option>
+                <option value="KES">KES (Kenyan Shilling)</option>
+                <option value="USD">USD (US Dollar)</option>
               </select>
             </div>
             <div style={styles.inputWrapper}>
@@ -554,6 +597,9 @@ const AddFunds = () => {
                 style={styles.input}
               />
             </div>
+            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '-10px', marginBottom: '10px' }}>
+              💡 Use KES for M-Pesa, USD for card payments
+            </p>
           </>
         )}
       </div>

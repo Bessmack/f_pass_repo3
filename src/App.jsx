@@ -18,7 +18,7 @@ import UserProfile from './pages/UserProfile';
 import TestMpesa from './pages/TestMpesa';
 import { AuthProvider } from './context/AuthContext';
 import EditBeneficiary from './pages/EditBeneficiary';
-
+import NotFound from './pages/NotFound'; // Import the error page
 
 function App() {
   return (
@@ -27,12 +27,15 @@ function App() {
         <Routes>
           <Route path="/" element={<Login />} />
           <Route path="/loggedout" element={<Logout />} />
+          
+          {/* Admin Routes */}
           <Route path="/admin/dashboard" element={<AdminOverview />} />
           <Route path="/admin/dashboard/transactions" element={<AdminTransactions />} />
           <Route path="/admin/dashboard/users" element={<AdminUsers />} />
           <Route path="/admin/dashboard/wallets" element={<AdminWallets />} />
           <Route path="/admin/profile" element={<Profile />} />
 
+          {/* User Routes */}
           <Route path="/user/dashboard" element={<UserHomePage />} />
           <Route path="/user/add-funds" element={<UserAddFunds />} />
           <Route path="/user/send-money" element={<UserSendMoney />} />
@@ -43,6 +46,9 @@ function App() {
           <Route path="/user/profile" element={<UserProfile />} />
           <Route path="/user/test-mpesa" element={<TestMpesa />} />
           <Route path="/user/edit-beneficiary/:id" element={<EditBeneficiary />} />
+          
+          {/* Catch-all route for 404 errors - MUST BE LAST */}
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>
     </AuthProvider>
