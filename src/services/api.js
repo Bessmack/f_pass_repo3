@@ -1,7 +1,7 @@
-// src/services/api.js
+// src/services/api.js - FIXED VERSION
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-// Helper function to get auth headers
+// Helper to get auth headers
 const getAuthHeaders = () => {
   const token = localStorage.getItem('access_token');
   return {
@@ -10,7 +10,16 @@ const getAuthHeaders = () => {
   };
 };
 
-// Helper function to handle API responses
+// Custom error class
+class APIError extends Error {
+  constructor(message, status, data) {
+    super(message);
+    this.status = status;
+    this.data = data;
+  }
+}
+
+// Handle API responses with better error handling
 const handleResponse = async (response) => {
   const contentType = response.headers.get('content-type');
   
@@ -25,231 +34,377 @@ const handleResponse = async (response) => {
         localStorage.removeItem('wallet');
         window.location.href = '/';
       }
-      throw data;
+      
+      // Throw custom error with details
+      throw new APIError(
+        data.error || 'Request failed',
+        response.status,
+        data
+      );
     }
     
     return data;
   } else {
     if (!response.ok) {
-      throw new Error('Network response was not ok');
+      throw new APIError('Network response was not ok', response.status);
     }
     return response;
+  }
+};
+
+// Retry logic for failed requests
+const fetchWithRetry = async (url, options, retries = 2) => {
+  try {
+    const response = await fetch(url, options);
+    return await handleResponse(response);
+  } catch (error) {
+    if (retries > 0 && error.status >= 500) {
+      console.log(`Retrying... ${retries} attempts left`);
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s
+      return fetchWithRetry(url, options, retries - 1);
+    }
+    throw error;
   }
 };
 
 // Authentication API
 export const authAPI = {
   register: async (userData) => {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(userData)
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData)
+      });
+    } catch (error) {
+      console.error('Register error:', error);
+      throw error;
+    }
   },
 
   login: async (credentials) => {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credentials)
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credentials)
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    }
   },
 
   getMe: async () => {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/auth/me`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Get me error:', error);
+      throw error;
+    }
   }
 };
 
 // User API
 export const userAPI = {
   getProfile: async () => {
-    const response = await fetch(`${API_BASE_URL}/users/profile`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/users/profile`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Get profile error:', error);
+      throw error;
+    }
   },
 
   updateProfile: async (data) => {
-    const response = await fetch(`${API_BASE_URL}/users/profile`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data)
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/users/profile`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data)
+      });
+    } catch (error) {
+      console.error('Update profile error:', error);
+      throw error;
+    }
   },
 
   changePassword: async (data) => {
-    const response = await fetch(`${API_BASE_URL}/users/change-password`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data)
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/users/change-password`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data)
+      });
+    } catch (error) {
+      console.error('Change password error:', error);
+      throw error;
+    }
   },
 
   getAllUsers: async () => {
-    const response = await fetch(`${API_BASE_URL}/users`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/users`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Get all users error:', error);
+      throw error;
+    }
   }
 };
 
 // Wallet API
 export const walletAPI = {
   getWallet: async () => {
-    const response = await fetch(`${API_BASE_URL}/wallet`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/wallet`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Get wallet error:', error);
+      throw error;
+    }
+  },
+
+  deposit: async (amount, phone) => {
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/wallet/deposit`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ amount, phone })
+      });
+    } catch (error) {
+      console.error('Deposit error:', error);
+      throw error;
+    }
   },
 
   addFunds: async (amount, note = '', method = 'card') => {
-    const response = await fetch(`${API_BASE_URL}/wallet/add-funds`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ amount, note, method })
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/wallet/add-funds`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ amount, note, method })
+      });
+    } catch (error) {
+      console.error('Add funds error:', error);
+      throw error;
+    }
+  },
+
+  checkTransactionStatus: async (checkoutRequestId) => {
+    try {
+      return await fetchWithRetry(
+        `${API_BASE_URL}/wallet/transaction-status/${checkoutRequestId}`,
+        { headers: getAuthHeaders() }
+      );
+    } catch (error) {
+      console.error('Check status error:', error);
+      throw error;
+    }
   }
 };
 
 // Transaction API
 export const transactionAPI = {
-  sendMoney: async (receiver_id, amount, note = '') => {
-    const response = await fetch(`${API_BASE_URL}/transactions/send`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ receiver_id, amount, note })
-    });
-    return handleResponse(response);
+  sendMoney: async (wallet_id, amount, note = '') => {
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/transactions/send`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ wallet_id, amount, note })
+      });
+    } catch (error) {
+      console.error('Send money error:', error);
+      throw error;
+    }
   },
 
   getTransactions: async (type = 'all', limit = 50) => {
-    const response = await fetch(
-      `${API_BASE_URL}/transactions?type=${type}&limit=${limit}`,
-      { headers: getAuthHeaders() }
-    );
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(
+        `${API_BASE_URL}/transactions?type=${type}&limit=${limit}`,
+        { headers: getAuthHeaders() }
+      );
+    } catch (error) {
+      console.error('Get transactions error:', error);
+      throw error;
+    }
   },
 
   getTransaction: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/transactions/${id}`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Get transaction error:', error);
+      throw error;
+    }
   }
 };
 
 // Beneficiary API
 export const beneficiaryAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/beneficiaries`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/beneficiaries`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Get beneficiaries error:', error);
+      throw error;
+    }
   },
 
   create: async (data) => {
-    const response = await fetch(`${API_BASE_URL}/beneficiaries`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data)
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/beneficiaries`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data)
+      });
+    } catch (error) {
+      console.error('Create beneficiary error:', error);
+      throw error;
+    }
   },
 
   getById: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/beneficiaries/${id}`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/beneficiaries/${id}`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Get beneficiary error:', error);
+      throw error;
+    }
   },
 
   update: async (id, data) => {
-    const response = await fetch(`${API_BASE_URL}/beneficiaries/${id}`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data)
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/beneficiaries/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data)
+      });
+    } catch (error) {
+      console.error('Update beneficiary error:', error);
+      throw error;
+    }
   },
 
   delete: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/beneficiaries/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/beneficiaries/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Delete beneficiary error:', error);
+      throw error;
+    }
   }
 };
 
 // Admin API
 export const adminAPI = {
   getAllUsers: async () => {
-    const response = await fetch(`${API_BASE_URL}/admin/users`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/admin/users`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Admin get users error:', error);
+      throw error;
+    }
   },
 
   getUser: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/admin/users/${id}`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/admin/users/${id}`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Admin get user error:', error);
+      throw error;
+    }
   },
 
   updateUser: async (id, data) => {
-    const response = await fetch(`${API_BASE_URL}/admin/users/${id}`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data)
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/admin/users/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data)
+      });
+    } catch (error) {
+      console.error('Admin update user error:', error);
+      throw error;
+    }
   },
 
   deleteUser: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/admin/users/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/admin/users/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Admin delete user error:', error);
+      throw error;
+    }
   },
 
   getAllWallets: async () => {
-    const response = await fetch(`${API_BASE_URL}/admin/wallets`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/admin/wallets`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Admin get wallets error:', error);
+      throw error;
+    }
   },
 
   adjustWallet: async (id, action, amount) => {
-    const response = await fetch(`${API_BASE_URL}/admin/wallets/${id}/adjust`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ action, amount })
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/admin/wallets/${id}/adjust`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ action, amount })
+      });
+    } catch (error) {
+      console.error('Admin adjust wallet error:', error);
+      throw error;
+    }
   },
 
   getAllTransactions: async () => {
-    const response = await fetch(`${API_BASE_URL}/admin/transactions`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/admin/transactions`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Admin get transactions error:', error);
+      throw error;
+    }
   },
 
   getStats: async () => {
-    const response = await fetch(`${API_BASE_URL}/admin/stats`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/admin/stats`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Admin get stats error:', error);
+      throw error;
+    }
   }
 };
 
@@ -263,8 +418,41 @@ export const formatCurrency = (amount, currency = 'USD') => {
   };
   
   const symbol = symbols[currency] || currency;
-  return `${symbol}${parseFloat(amount).toFixed(2)}`;
+  const value = parseFloat(amount) || 0;
+  return `${symbol}${value.toFixed(2)}`;
 };
+
+export const validateAmount = (amount) => {
+  const num = parseFloat(amount);
+  if (isNaN(num) || num <= 0) {
+    return { valid: false, error: 'Amount must be greater than 0' };
+  }
+  if (num > 10000) {
+    return { valid: false, error: 'Amount cannot exceed $10,000' };
+  }
+  return { valid: true };
+};
+
+export const validatePhone = (phone) => {
+  // Remove spaces and dashes
+  const cleaned = phone.replace(/[\s\-]/g, '');
+  
+  // Check if it's a valid format
+  if (cleaned.startsWith('0') && cleaned.length === 10) {
+    return { valid: true, formatted: '254' + cleaned.slice(1) };
+  }
+  if (cleaned.startsWith('254') && cleaned.length === 12) {
+    return { valid: true, formatted: cleaned };
+  }
+  if (cleaned.startsWith('+254') && cleaned.length === 13) {
+    return { valid: true, formatted: cleaned.slice(1) };
+  }
+  
+  return { valid: false, error: 'Invalid phone format. Use 07XXXXXXXX or 254XXXXXXXXX' };
+};
+
+// Export API Error class
+export { APIError };
 
 export default {
   auth: authAPI,
@@ -273,5 +461,7 @@ export default {
   transaction: transactionAPI,
   beneficiary: beneficiaryAPI,
   admin: adminAPI,
-  formatCurrency
+  formatCurrency,
+  validateAmount,
+  validatePhone
 };

@@ -1,6 +1,9 @@
+// src/pages/UserSendMoney.jsx - FIXED VERSION
 import React, { useState, useEffect } from "react";
-import { FaSearch, FaPaperPlane, FaTimes, FaCheckCircle, FaArrowLeft } from "react-icons/fa";
+import { FaSearch, FaPaperPlane, FaCheckCircle, FaArrowLeft, FaSpinner } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
+import { beneficiaryAPI, transactionAPI, walletAPI, validateAmount } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 import UserBottomNavbar from "../components/UserBottomNavbar";
 
 const SendMoney = () => {
@@ -12,49 +15,56 @@ const SendMoney = () => {
   const [showModal, setShowModal] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingBeneficiaries, setLoadingBeneficiaries] = useState(true);
   const [toast, setToast] = useState(null);
+  const [error, setError] = useState('');
   const [walletBalance, setWalletBalance] = useState(0);
   const [beneficiaries, setBeneficiaries] = useState([]);
   const navigate = useNavigate();
+  const { refreshWallet } = useAuth();
 
   const presetAmounts = [10, 25, 50, 100, 250, 500];
   const transactionChargeRate = 0.015; // 1.5%
 
-  /** ─── Fetch wallet and beneficiaries on load ─── **/
+  // Fetch wallet and beneficiaries
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = localStorage.getItem("access_token");
+        setLoadingBeneficiaries(true);
         
         // Fetch wallet
-        const walletRes = await fetch("http://localhost:5000/api/wallet", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const walletData = await walletRes.json();
-        setWalletBalance(walletData.wallet?.balance || 0);
+        const walletResponse = await walletAPI.getWallet();
+        const wallet = walletResponse?.wallet || walletResponse;
+        setWalletBalance(wallet?.balance || 0);
 
         // Fetch beneficiaries
-        const benefRes = await fetch("http://localhost:5000/api/beneficiaries", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const benefData = await benefRes.json();
-        setBeneficiaries(benefData.beneficiaries || []);
+        const benefResponse = await beneficiaryAPI.getAll();
+        const list = benefResponse?.beneficiaries || benefResponse?.data || benefResponse || [];
+        setBeneficiaries(Array.isArray(list) ? list : []);
+        
       } catch (err) {
         console.error("Error fetching data:", err);
-        showToast("error", "Failed to load data");
+        showToast("error", "Failed to load data. Please refresh.");
+      } finally {
+        setLoadingBeneficiaries(false);
       }
     };
+    
     fetchData();
   }, []);
 
   const filtered = beneficiaries.filter(
     (b) =>
       b.name?.toLowerCase().includes(search.toLowerCase()) ||
-      b.tag?.toLowerCase().includes(search.toLowerCase())
+      b.email?.toLowerCase().includes(search.toLowerCase()) ||
+      b.wallet_id?.includes(search)
   );
 
   const handleSendClick = (user) => {
     setSelectedUser(user);
+    setAmount('');
+    setNote('');
+    setError('');
     setShowModal(true);
   };
 
@@ -62,49 +72,44 @@ const SendMoney = () => {
   const totalPayable = amount ? parseFloat(amount) + totalCharge : 0;
 
   const confirmSend = () => {
-    // Validation
-    if (!amount || parseFloat(amount) <= 0) {
-      showToast("error", "Please enter a valid amount");
+    setError('');
+    
+    // Validate amount
+    const validation = validateAmount(amount);
+    if (!validation.valid) {
+      setError(validation.error);
       return;
     }
 
     if (totalPayable > walletBalance) {
-      showToast("error", "Insufficient balance (including fee)");
+      setError(`Insufficient balance. You need $${totalPayable.toFixed(2)} (including $${totalCharge.toFixed(2)} fee), but have $${walletBalance.toFixed(2)}`);
       return;
     }
 
     setConfirming(true);
   };
 
-  /** ─── Send money transaction ─── **/
   const finalizeSend = async () => {
     if (!amount || !selectedUser) return;
     
     setLoading(true);
+    setError('');
+    
     try {
-      const token = localStorage.getItem("access_token");
-      
-      // Send money to beneficiary's wallet_id
-      const res = await fetch("http://localhost:5000/api/transactions/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          wallet_id: selectedUser.wallet_id, // ✅ Use wallet_id from beneficiary
-          amount: parseFloat(amount),
-          note: note || "",
-        }),
-      });
+      const response = await transactionAPI.sendMoney(
+        selectedUser.wallet_id,
+        parseFloat(amount),
+        note || ''
+      );
 
-      const data = await res.json();
-
-      if (data.success) {
+      if (response.success) {
         // Update local wallet balance
         setWalletBalance(prev => prev - totalPayable);
         
-        showToast("success", `Sent $${amount} to ${selectedUser.name}`);
+        // Refresh wallet from server
+        await refreshWallet();
+        
+        showToast("success", `✅ Sent $${amount} to ${selectedUser.name}`);
         
         // Reset form
         setAmount("");
@@ -113,11 +118,12 @@ const SendMoney = () => {
         setConfirming(false);
         setShowModal(false);
       } else {
-        showToast("error", data.error || "Transaction failed");
+        setError(response.error || "Transaction failed");
       }
     } catch (err) {
       console.error("Transaction failed:", err);
-      showToast("error", "Transaction failed! Please try again.");
+      const errorMsg = err.data?.error || err.message || "Transaction failed! Please try again.";
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -125,12 +131,10 @@ const SendMoney = () => {
 
   const showToast = (type, message) => {
     setToast({ type, message });
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 4000);
   };
 
-  const formatCurrency = (val) => {
-    return `$${parseFloat(val || 0).toFixed(2)}`;
-  };
+  const formatCurrency = (val) => `$${parseFloat(val || 0).toFixed(2)}`;
 
   const styles = {
     container: {
@@ -140,7 +144,7 @@ const SendMoney = () => {
       minHeight: "100vh",
       background: "linear-gradient(135deg, #e2e8f0 0%, #f8fafc 40%, #dbeafe 100%)",
       fontFamily: "Inter, sans-serif",
-      paddingBottom: "40px",
+      paddingBottom: "100px",
       gap: "25px",
     },
     header: {
@@ -165,6 +169,22 @@ const SendMoney = () => {
       flexDirection: "column",
       alignItems: "flex-start",
       gap: "10px",
+    },
+    headerTitleWrapper: {
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+    },
+    backBtn: {
+      background: "rgba(255,255,255,0.15)",
+      border: "none",
+      borderRadius: "20px",
+      padding: "10px",
+      cursor: "pointer",
+      transition: "all 0.25s ease",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
     },
     searchBarBelow: {
       position: "relative",
@@ -197,7 +217,6 @@ const SendMoney = () => {
       marginTop: "5px",
       fontWeight: 500,
     },
-    headerSubtext: { fontSize: "1rem", opacity: 0.9 },
     listContainer: {
       width: "90%",
       maxWidth: "700px",
@@ -205,6 +224,16 @@ const SendMoney = () => {
       flexDirection: "column",
       gap: "14px",
       marginTop: "20px",
+    },
+    loadingContainer: {
+      textAlign: "center",
+      padding: "40px",
+      color: "#64748b",
+    },
+    emptyState: {
+      textAlign: "center",
+      padding: "60px 20px",
+      color: "#64748b",
     },
     card: {
       background: "rgba(255, 255, 255, 0.9)",
@@ -241,11 +270,6 @@ const SendMoney = () => {
       gap: "6px",
       fontWeight: 500,
     },
-    sendBtnHover: {
-      background: "#1d4ed8",
-      transform: "translateY(-2px)",
-      boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
-    },
     modalOverlay: {
       position: "fixed",
       top: 0,
@@ -267,12 +291,23 @@ const SendMoney = () => {
       maxWidth: "380px",
       textAlign: "center",
       boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+      maxHeight: "90vh",
+      overflowY: "auto",
     },
     modalTitle: {
       color: "#1e3a8a",
       fontSize: "1.3rem",
       fontWeight: 700,
       marginBottom: "15px",
+    },
+    errorMessage: {
+      background: "#fee2e2",
+      border: "1px solid #ef4444",
+      borderRadius: "8px",
+      padding: "12px",
+      color: "#dc2626",
+      fontSize: "14px",
+      marginBottom: "16px",
     },
     presets: {
       display: "flex",
@@ -290,11 +325,7 @@ const SendMoney = () => {
       fontWeight: 500,
       cursor: "pointer",
       transition: "all 0.3s ease",
-      boxShadow: active
-        ? "0 4px 12px rgba(37,99,235,0.4)"
-        : hovered
-        ? "0 4px 10px rgba(59,130,246,0.25)"
-        : "none",
+      boxShadow: active ? "0 4px 12px rgba(37,99,235,0.4)" : hovered ? "0 4px 10px rgba(59,130,246,0.25)" : "none",
       transform: hovered ? "translateY(-3px)" : "translateY(0)",
     }),
     inputWrapper: { position: "relative", width: "100%", marginBottom: "12px" },
@@ -313,6 +344,7 @@ const SendMoney = () => {
       border: "1px solid #cbd5e0",
       outline: "none",
       textAlign: "center",
+      fontSize: "1rem",
     },
     textarea: {
       width: "100%",
@@ -322,6 +354,7 @@ const SendMoney = () => {
       outline: "none",
       minHeight: "70px",
       resize: "none",
+      fontSize: "1rem",
     },
     infoBox: {
       background: "#f8fafc",
@@ -359,6 +392,10 @@ const SendMoney = () => {
       fontWeight: 600,
       cursor: "pointer",
       transition: "all 0.3s ease",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "8px",
     },
     cancelBtn: {
       flex: 1,
@@ -382,47 +419,19 @@ const SendMoney = () => {
       display: "flex",
       alignItems: "center",
       gap: "8px",
-      animation: "slideInRight 0.4s ease, fadeOut 0.5s ease 3s forwards",
+      animation: "slideInRight 0.4s ease, fadeOut 0.5s ease 3.5s forwards",
       zIndex: 200,
       fontWeight: 500,
-    },
-    headerTitleWrapper: {
-      display: "flex",
-      alignItems: "center",
-      gap: "10px",
-    },
-    backBtn: {
-      background: "rgba(255,255,255,0.15)",
-      border: "none",
-      borderRadius: "20px",
-      padding: "10px 10px",
-      cursor: "pointer",
-      transition: "all 0.25s ease",
-    },
-    backBtnHover: {
-      background: "rgba(255,255,255,0.25)",
-      transform: "translateX(-2px)",
+      maxWidth: "400px",
     },
   };
 
   const styleSheet = document.styleSheets[0];
-  if (styleSheet) {
-    const slideIn = `
-      @keyframes slideInRight {
-        0% { transform: translateX(100%); opacity: 0; }
-        100% { transform: translateX(0); opacity: 1; }
-      }
-    `;
-    const fadeOut = `
-      @keyframes fadeOut {
-        0% { opacity: 1; }
-        100% { opacity: 0; transform: translateY(20px); }
-      }
-    `;
-    if (![...styleSheet.cssRules].some(r => r.name === "slideInRight")) {
-      styleSheet.insertRule(slideIn, styleSheet.cssRules.length);
-      styleSheet.insertRule(fadeOut, styleSheet.cssRules.length);
-    }
+  if (styleSheet && ![...styleSheet.cssRules].some(r => r.name === "slideInRight")) {
+    const slideIn = `@keyframes slideInRight { 0% { transform: translateX(100%); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }`;
+    const fadeOut = `@keyframes fadeOut { 0% { opacity: 1; } 100% { opacity: 0; transform: translateY(20px); } }`;
+    styleSheet.insertRule(slideIn, styleSheet.cssRules.length);
+    styleSheet.insertRule(fadeOut, styleSheet.cssRules.length);
   }
 
   return (
@@ -431,12 +440,7 @@ const SendMoney = () => {
         <div style={styles.headerContent}>
           <div style={styles.headerTop}>
             <div style={styles.headerTitleWrapper}>
-              <button
-                style={styles.backBtn}
-                onMouseEnter={(e) => Object.assign(e.currentTarget.style, styles.backBtnHover)}
-                onMouseLeave={(e) => Object.assign(e.currentTarget.style, styles.backBtn)}
-                onClick={() => navigate(-1)}
-              >
+              <button style={styles.backBtn} onClick={() => navigate(-1)}>
                 <FaArrowLeft size={16} color="white" />
               </button>
               <h2 style={styles.headerTitle}>Send Money</h2>
@@ -456,15 +460,17 @@ const SendMoney = () => {
           <p style={styles.walletBalance}>
             Wallet Balance: {formatCurrency(walletBalance)} available
           </p>
-          <p style={styles.headerSubtext}>
-            Choose a beneficiary and send them money instantly.
-          </p>
         </div>
       </div>
 
       {/* Beneficiary List */}
       <div style={styles.listContainer}>
-        {filtered.length > 0 ? (
+        {loadingBeneficiaries ? (
+          <div style={styles.loadingContainer}>
+            <FaSpinner className="animate-spin" size={32} color="#2563eb" />
+            <p style={{ marginTop: "16px" }}>Loading beneficiaries...</p>
+          </div>
+        ) : filtered.length > 0 ? (
           filtered.map((user) => (
             <div
               key={user.id}
@@ -476,13 +482,11 @@ const SendMoney = () => {
             >
               <div style={styles.userInfo}>
                 <strong>{user.name}</strong>
-                <span style={{ color: "#475569", fontSize: "0.9rem" }}>{user.tag}</span>
+                <span style={{ color: "#475569", fontSize: "0.9rem" }}>{user.email}</span>
                 <span style={styles.walletId}>Wallet: {user.wallet_id}</span>
               </div>
               <button
                 style={styles.sendBtn}
-                onMouseEnter={(e) => Object.assign(e.currentTarget.style, styles.sendBtnHover)}
-                onMouseLeave={(e) => Object.assign(e.currentTarget.style, styles.sendBtn)}
                 onClick={() => handleSendClick(user)}
               >
                 <FaPaperPlane /> Send
@@ -490,9 +494,22 @@ const SendMoney = () => {
             </div>
           ))
         ) : (
-          <p style={{ textAlign: "center", marginTop: "20px", color: "#475569" }}>
-            No beneficiaries found.
-          </p>
+          <div style={styles.emptyState}>
+            <p style={{ fontSize: "1.2rem", marginBottom: "8px" }}>
+              {search ? "No beneficiaries found" : "No beneficiaries yet"}
+            </p>
+            <p style={{ fontSize: "0.9rem" }}>
+              {search ? "Try a different search term" : "Add a beneficiary to get started"}
+            </p>
+            {!search && (
+              <button
+                style={{ ...styles.sendBtn, marginTop: "16px", padding: "12px 24px" }}
+                onClick={() => navigate("/user/add-beneficiary")}
+              >
+                Add Beneficiary
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -502,11 +519,13 @@ const SendMoney = () => {
           <div style={styles.modal}>
             <h3 style={styles.modalTitle}>Send to {selectedUser?.name}</h3>
 
+            {error && <div style={styles.errorMessage}>{error}</div>}
+
             {!confirming ? (
               <>
                 <div style={styles.infoBox}>
                   <p><strong>Wallet Balance:</strong> {formatCurrency(walletBalance)}</p>
-                  <p><strong>Transaction Fee:</strong> {transactionChargeRate * 100}% ({formatCurrency(totalCharge)})</p>
+                  <p><strong>Transaction Fee:</strong> 1.5% ({formatCurrency(totalCharge)})</p>
                 </div>
 
                 <div style={styles.presets}>
@@ -529,7 +548,10 @@ const SendMoney = () => {
                     type="number"
                     placeholder="Enter amount"
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={(e) => {
+                      setAmount(e.target.value);
+                      setError('');
+                    }}
                     style={styles.input}
                   />
                 </div>
@@ -545,7 +567,7 @@ const SendMoney = () => {
                   <button style={styles.cancelBtn} onClick={() => setShowModal(false)}>
                     Cancel
                   </button>
-                  <button style={styles.confirmBtn} onClick={confirmSend} disabled={!amount}>
+                  <button style={styles.confirmBtn} onClick={confirmSend} disabled={!amount || loading}>
                     Continue
                   </button>
                 </div>
@@ -564,11 +586,18 @@ const SendMoney = () => {
                 </div>
 
                 <div style={styles.modalBtns}>
-                  <button style={styles.cancelBtn} onClick={() => setConfirming(false)}>
+                  <button style={styles.cancelBtn} onClick={() => setConfirming(false)} disabled={loading}>
                     Back
                   </button>
                   <button style={styles.confirmBtn} onClick={finalizeSend} disabled={loading}>
-                    {loading ? "Sending..." : "Confirm & Send"}
+                    {loading ? (
+                      <>
+                        <FaSpinner className="animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      "Confirm & Send"
+                    )}
                   </button>
                 </div>
               </>
@@ -583,11 +612,22 @@ const SendMoney = () => {
           ...styles.toast,
           background: toast.type === "error" ? "#ef4444" : "#2563eb"
         }}>
-          {toast.type === "success" ? <FaCheckCircle size={20} /> : <FaTimes size={18} />}
+          {toast.type === "success" ? <FaCheckCircle size={20} /> : <span>⚠️</span>}
           {toast.message}
         </div>
       )}
-      <UserBottomNavbar/>
+
+      <UserBottomNavbar />
+
+      <style>{`
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
