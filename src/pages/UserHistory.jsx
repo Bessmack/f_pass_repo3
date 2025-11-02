@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowDownToLine, Send, Download } from "lucide-react";
 import { walletAPI, transactionAPI, formatCurrency } from "../services/api";
 import { useAuth } from "../context/AuthContext"; // Import useAuth
+import ReceiptDownloadButton from '../components/ReceiptDownloadButton';
 
 export default function UserHistory() {
   const [activeTab, setActiveTab] = useState("all");
@@ -257,6 +258,7 @@ export default function UserHistory() {
                 {formatCurrency(Math.abs(selectedTransaction.amount), currency)}
               </p>
               <p className="text-gray-500">{selectedTransaction.status}</p>
+              
             </div>
 
             {/* Transaction Details */}
@@ -291,17 +293,17 @@ export default function UserHistory() {
 
             {/* Buttons */}
             <div className="flex gap-3">
-              <button className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-50 transition flex items-center justify-center gap-2">
-                <Download size={18} />
-                Receipt
-              </button>
-              <button 
-                onClick={closeModal}
-                className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 transition"
-              >
-                Close
-              </button>
-            </div>
+                <ReceiptDownloadButton 
+                  transactionId={selectedTransaction.transactionId} 
+                  variant="button" 
+                />
+                <button 
+                  onClick={closeModal}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 transition"
+                >
+                  Close
+                </button>
+              </div>
           </div>
         </div>
       )}

@@ -408,6 +408,80 @@ export const adminAPI = {
   }
 };
 
+// Notification API
+export const notificationAPI = {
+  getAll: async (unreadOnly = false) => {
+    try {
+      const param = unreadOnly ? '?unread_only=true' : '';
+      return await fetchWithRetry(`${API_BASE_URL}/notifications${param}`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Get notifications error:', error);
+      throw error;
+    }
+  },
+
+  getUnreadCount: async () => {
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/notifications/unread-count`, {
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Get unread count error:', error);
+      throw error;
+    }
+  },
+
+  markAsRead: async (id) => {
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/notifications/${id}/read`, {
+        method: 'PUT',
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Mark as read error:', error);
+      throw error;
+    }
+  },
+
+  markAllAsRead: async () => {
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/notifications/mark-all-read`, {
+        method: 'PUT',
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Mark all as read error:', error);
+      throw error;
+    }
+  },
+
+  delete: async (id) => {
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/notifications/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Delete notification error:', error);
+      throw error;
+    }
+  },
+
+  clearAll: async () => {
+    try {
+      return await fetchWithRetry(`${API_BASE_URL}/notifications/clear`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Clear notifications error:', error);
+      throw error;
+    }
+  }
+};
+
 // Utility functions
 export const formatCurrency = (amount, currency = 'USD') => {
   const symbols = {
