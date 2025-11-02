@@ -158,7 +158,7 @@ export const userAPI = {
   }
 };
 
-// Wallet API
+// Wallet API - Updated for Pesapay
 export const walletAPI = {
   getWallet: async () => {
     try {
@@ -171,15 +171,29 @@ export const walletAPI = {
     }
   },
 
-  deposit: async (amount, phone) => {
+  // Pesapay deposit
+  deposit: async (amount, phone, currency = 'USD') => {
     try {
       return await fetchWithRetry(`${API_BASE_URL}/wallet/deposit`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ amount, phone })
+        body: JSON.stringify({ amount, phone, currency })
       });
     } catch (error) {
       console.error('Deposit error:', error);
+      throw error;
+    }
+  },
+
+  // Check Pesapay payment status
+  checkPaymentStatus: async (reference) => {
+    try {
+      return await fetchWithRetry(
+        `${API_BASE_URL}/wallet/payment-status/${reference}`,
+        { headers: getAuthHeaders() }
+      );
+    } catch (error) {
+      console.error('Check payment status error:', error);
       throw error;
     }
   },
@@ -197,16 +211,9 @@ export const walletAPI = {
     }
   },
 
-  checkTransactionStatus: async (checkoutRequestId) => {
-    try {
-      return await fetchWithRetry(
-        `${API_BASE_URL}/wallet/transaction-status/${checkoutRequestId}`,
-        { headers: getAuthHeaders() }
-      );
-    } catch (error) {
-      console.error('Check status error:', error);
-      throw error;
-    }
+  // Keep this for backward compatibility (redirects to new endpoint)
+  checkTransactionStatus: async (reference) => {
+    return walletAPI.checkPaymentStatus(reference);
   }
 };
 

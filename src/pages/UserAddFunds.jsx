@@ -1,4 +1,4 @@
-// src/pages/UserAddFunds.jsx - FIXED VERSION
+// src/pages/UserAddFunds.jsx - PESAPAY VERSION
 import React, { useState, useEffect } from "react";
 import { FaCreditCard, FaUniversity, FaMobileAlt, FaCheckCircle, FaArrowLeft, FaSpinner } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 const AddFunds = () => {
   const [amount, setAmount] = useState("");
   const [phone, setPhone] = useState("");
+  const [currency, setCurrency] = useState("USD"); // New for Pesapay
   const [method, setMethod] = useState(null);
   const [loading, setLoading] = useState(false);
   const [hoveredPreset, setHoveredPreset] = useState(null);
@@ -17,15 +18,19 @@ const AddFunds = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('success');
   const [error, setError] = useState('');
+  const [paymentData, setPaymentData] = useState(null); // New for Pesapay polling
   const navigate = useNavigate();
   const { user, refreshWallet } = useAuth();
 
   const presetAmounts = [10, 25, 50, 100, 250, 500];
 
   const methods = [
-    { id: "mobile", name: "Mobile Money (M-Pesa)", icon: <FaMobileAlt size={28} color="#2563eb" />, fee: 0 },
-    { id: "card", name: "Credit / Debit Card", icon: <FaCreditCard size={28} color="#2563eb" />, fee: 2.5 },
-    { id: "bank", name: "Bank Transfer", icon: <FaUniversity size={28} color="#2563eb" />, fee: 1.2 },
+    { 
+      id: "mobile", 
+      name: "Mobile Money (Pesapay)", // Updated name
+      icon: <FaMobileAlt size={28} color="#2563eb" />, 
+      fee: 0 
+    },
   ];
 
   // Set default phone from user profile
@@ -34,6 +39,13 @@ const AddFunds = () => {
       setPhone(user.phone);
     }
   }, [user]);
+
+  // Poll for Pesapay payment status
+  useEffect(() => {
+    if (paymentData) {
+      startPolling(paymentData.reference);
+    }
+  }, [paymentData]);
 
   const handlePreset = (val) => {
     setAmount(val.toString());
@@ -51,6 +63,10 @@ const AddFunds = () => {
   const handlePhoneChange = (e) => {
     setPhone(e.target.value);
     setError('');
+  };
+
+  const handleCurrencyChange = (e) => {
+    setCurrency(e.target.value);
   };
 
   const handleSubmit = (e) => {
@@ -83,9 +99,9 @@ const AddFunds = () => {
 
     try {
       if (method.id === 'mobile') {
-        // M-Pesa deposit
+        // Pesapay deposit
         if (!phone) {
-          showToastMessage('Phone number is required for M-Pesa', 'error');
+          showToastMessage('Phone number is required for Pesapay', 'error');
           setLoading(false);
           return;
         }
@@ -98,25 +114,34 @@ const AddFunds = () => {
           return;
         }
 
-        const response = await walletAPI.deposit(parseFloat(amount), phoneValidation.formatted);
+        const response = await walletAPI.deposit(
+          parseFloat(amount), 
+          phoneValidation.formatted,
+          currency
+        );
         
         if (response.success) {
           showToastMessage(
-            `✅ STK Push sent to ${phone}! Enter your M-Pesa PIN to complete.`,
+            `✅ Payment initiated! Redirecting to Pesapay...`,
             'success'
           );
           
-          // Poll for status (optional - enhance UX)
-          pollTransactionStatus(response.checkout_request_id);
+          // Store payment data for polling
+          setPaymentData(response);
+          
+          // Redirect to Pesapay payment page
+          if (response.payment_url) {
+            window.open(response.payment_url, '_blank');
+          }
           
           setShowModal(false);
           setAmount('');
           setPhone(user?.phone || '');
         } else {
-          showToastMessage(response.error || 'Transaction failed', 'error');
+          showToastMessage(response.error || 'Payment initiation failed', 'error');
         }
       } else {
-        // Other payment methods
+        // Other payment methods (unchanged)
         const response = await walletAPI.addFunds(parseFloat(amount), '', method.id);
         
         if (response.success) {
@@ -140,24 +165,32 @@ const AddFunds = () => {
     }
   };
 
-  const pollTransactionStatus = async (checkoutRequestId, attempts = 0) => {
-    if (attempts >= 10) return; // Stop after 10 attempts (50 seconds)
+  const startPolling = async (reference, attempts = 0) => {
+    if (attempts >= 20) { // Stop after 20 attempts (100 seconds)
+      showToastMessage('Payment timeout. Please check your Pesapay account.', 'error');
+      setPaymentData(null);
+      return;
+    }
 
     setTimeout(async () => {
       try {
-        const response = await walletAPI.checkTransactionStatus(checkoutRequestId);
+        const response = await walletAPI.checkPaymentStatus(reference);
         
-        if (response.transaction.status === 'completed') {
+        if (response.status === 'completed') {
           showToastMessage('✅ Payment completed successfully!', 'success');
           await refreshWallet();
-        } else if (response.transaction.status === 'failed') {
+          setPaymentData(null);
+        } else if (response.status === 'failed') {
           showToastMessage('❌ Payment failed or was cancelled', 'error');
+          setPaymentData(null);
         } else {
           // Still pending, poll again
-          pollTransactionStatus(checkoutRequestId, attempts + 1);
+          startPolling(reference, attempts + 1);
         }
       } catch (err) {
         console.error('Status check error:', err);
+        // Continue polling on error
+        startPolling(reference, attempts + 1);
       }
     }, 5000); // Check every 5 seconds
   };
@@ -295,6 +328,16 @@ const AddFunds = () => {
       textAlign: "center",
       outline: "none",
       transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+    },
+    select: {
+      width: "100%",
+      padding: "14px",
+      borderRadius: "12px",
+      border: "1px solid #cbd5e0",
+      fontSize: "1rem",
+      outline: "none",
+      transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+      background: "white",
     },
     methodsContainer: {
       display: "flex",
@@ -455,7 +498,7 @@ const AddFunds = () => {
             <h2 style={styles.headerTitle}>Add Funds</h2>
           </div>
           <p style={styles.headerSubtext}>
-            Select or enter the amount you want to add, then choose your payment method.
+            Select or enter the amount you want to add.
           </p>
         </div>
       </div>
@@ -489,16 +532,29 @@ const AddFunds = () => {
             style={styles.input}
           />
         </div>
+        
+        {/* Currency Selection for Pesapay */}
         {method?.id === 'mobile' && (
-          <div style={styles.inputWrapper}>
-            <input
-              type="tel"
-              placeholder="Enter M-Pesa number (e.g. 0712345678)"
-              value={phone}
-              onChange={handlePhoneChange}
-              style={styles.input}
-            />
-          </div>
+          <>
+            <div style={styles.inputWrapper}>
+              <select
+                value={currency}
+                onChange={handleCurrencyChange}
+                style={styles.select}
+              >
+                <option value="KES">KES</option>
+              </select>
+            </div>
+            <div style={styles.inputWrapper}>
+              <input
+                type="tel"
+                placeholder="Enter phone number (e.g. 254712345678)"
+                value={phone}
+                onChange={handlePhoneChange}
+                style={styles.input}
+              />
+            </div>
+          </>
         )}
       </div>
 
@@ -565,9 +621,14 @@ const AddFunds = () => {
               <strong>{method?.name}</strong>?
             </p>
             {method?.id === 'mobile' && (
-              <p style={{ marginTop: "10px", fontSize: "14px", color: "#64748b" }}>
-                Phone: <strong>{phone}</strong>
-              </p>
+              <>
+                <p style={{ marginTop: "10px", fontSize: "14px", color: "#64748b" }}>
+                  Phone: <strong>{phone}</strong>
+                </p>
+                <p style={{ marginTop: "5px", fontSize: "14px", color: "#64748b" }}>
+                  Currency: <strong>{currency}</strong>
+                </p>
+              </>
             )}
             <div style={styles.modalButtons}>
               <button style={styles.cancelBtn} onClick={() => setShowModal(false)}>

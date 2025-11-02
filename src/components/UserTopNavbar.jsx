@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import NotificationCenter from './NotificationCenter';
+import { userAPI } from '../services/api';
 
 function UserTopNavbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -8,6 +9,14 @@ function UserTopNavbar() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const [profileData, setProfileData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+  });
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [tempData, setTempData] = useState({ ...profileData });
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -52,6 +61,51 @@ function UserTopNavbar() {
     setIsProfileOpen(false);
   };
 
+  const fetchUserProfile = async () => {
+      try {
+        setIsLoading(true);
+        const response = await userAPI.getProfile();
+        const userData = response.user || response.data || response;
+        
+        setProfileData({
+          firstName: userData.first_name || '',
+          lastName: userData.last_name || '',
+          email: userData.email || ''
+        });
+        setTempData({
+          firstName: userData.first_name || '',
+          lastName: userData.last_name || '',
+          email: userData.email || ''
+        });
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+        setError('Failed to load profile data');
+        const defaultData = {
+          firstName: 'John',
+          lastName: 'Doe',
+          email: 'john.doe@email.com'
+        };
+        setProfileData(defaultData);
+        setTempData(defaultData);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    useEffect(() => {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+      setIsDarkMode(true);
+      document.documentElement.classList.add('dark-mode');
+    }
+  }, []);
+
+  // 🟩 ADD THIS useEffect to actually fetch user data
+  useEffect(() => {
+    fetchUserProfile();
+  }, []); // runs once when navbar mounts
+
+
   return (
     <nav className="navbarhome">
       <div className="navbar-container">
@@ -70,7 +124,7 @@ function UserTopNavbar() {
           <div className="profile-dropdown">
             <button className="profile-button" onClick={toggleProfile}>
               <div className="profile-avatar">
-                <span>JD</span>
+                <span>{profileData.firstName?.[0]}{profileData.lastName?.[0]}</span>
               </div>
               <svg className="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path d="M6 9l6 6 6-6" />
@@ -81,11 +135,11 @@ function UserTopNavbar() {
               <div className="dropdown-menu" style={{ zIndex: 1001 }}>
                 <div className="dropdown-header">
                   <div className="profile-avatar-large">
-                    <span>JD</span>
+                    <span>{profileData.firstName?.[0]}{profileData.lastName?.[0]}</span>
                   </div>
                   <div className="profile-info">
-                    <p className="profile-name">John Doe</p>
-                    <p className="profile-email">john.doe@email.com</p>
+                    <p className="profile-name">{profileData.firstName} {profileData.lastName}</p>
+                    <p className="profile-email">{profileData.email}</p>
                   </div>
                 </div>
                 <div className="dropdown-divider"></div>
