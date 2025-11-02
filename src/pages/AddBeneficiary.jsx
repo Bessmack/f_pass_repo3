@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { beneficiaryAPI } from '../services/api'; // ✅ import from your api.js
 import './AddBeneficiary.css';
+import UserBottomNavbar from '../components/UserBottomNavbar';
 
 const AddBeneficiary = () => {
   const navigate = useNavigate();
@@ -106,6 +107,7 @@ const AddBeneficiary = () => {
   }
 
   return (
+    <>
     <div className="add-beneficiary">
       {/* Header */}
       <div className="add-beneficiary-header">
@@ -262,6 +264,8 @@ const AddBeneficiary = () => {
         </form>
       </div>
     </div>
+    <UserBottomNavbar/>
+    </>
   );
 };
 

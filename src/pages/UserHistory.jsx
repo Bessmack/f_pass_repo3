@@ -1,12 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ArrowLeft,
-  ArrowDownToLine,
-  Send,
-  Download
-} from "lucide-react";
+import { ArrowLeft, ArrowDownToLine, Send, Download } from "lucide-react";
 import { walletAPI, transactionAPI, formatCurrency } from "../services/api";
+import { useAuth } from "../context/AuthContext"; // Import useAuth
 
 export default function UserHistory() {
   const [activeTab, setActiveTab] = useState("all");
@@ -17,6 +13,7 @@ export default function UserHistory() {
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [stats, setStats] = useState({ totalSent: 0, totalReceived: 0 });
   const navigate = useNavigate();
+  const { user } = useAuth(); // Get current user
 
   useEffect(() => {
     const fetchData = async () => {
@@ -24,15 +21,14 @@ export default function UserHistory() {
         setLoading(true);
         setError(null);
 
-        // ✅ Fetch wallet
+        // Fetch wallet
         const walletResponse = await walletAPI.getWallet();
         const wallet = walletResponse?.wallet || walletResponse;
         setWalletData(wallet);
 
-        // ✅ Fetch transactions
+        // Fetch transactions
         const txResponse = await transactionAPI.getTransactions("all", 50);
-        const transactionsData =
-          txResponse?.transactions || txResponse?.data || txResponse || [];
+        const transactionsData = txResponse?.transactions || txResponse?.data || txResponse || [];
 
         if (!Array.isArray(transactionsData)) {
           console.warn("Unexpected transactions format:", transactionsData);
@@ -41,13 +37,13 @@ export default function UserHistory() {
           setTransactions(transactionsData);
         }
 
-        // ✅ Calculate totals
+        // Calculate totals using correct logic
         const sent = (transactionsData || [])
-          .filter(t => t.type === "sent" || t.transaction_type === "sent")
+          .filter(t => t.sender_id === user?.id && t.type === 'transfer')
           .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
 
         const received = (transactionsData || [])
-          .filter(t => t.type === "received" || t.transaction_type === "received")
+          .filter(t => (t.receiver_id === user?.id && t.type === 'transfer') || t.type === 'add_funds')
           .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
 
         setStats({ totalSent: sent, totalReceived: received });
@@ -60,28 +56,44 @@ export default function UserHistory() {
     };
 
     fetchData();
-  }, []);
+  }, [user]); // Add user to dependencies
 
+  // Correct filtering logic
   const filteredTransactions = Array.isArray(transactions)
     ? transactions.filter(t => {
         if (activeTab === "all") return true;
-        if (activeTab === "sent") return t.type === "sent" || t.transaction_type === "sent";
-        if (activeTab === "received") return t.type === "received" || t.transaction_type === "received";
+        
+        const isSent = t.sender_id === user?.id;
+        const isReceived = t.receiver_id === user?.id;
+        
+        if (activeTab === "sent") {
+          return isSent && t.type === 'transfer';
+        }
+        
+        if (activeTab === "received") {
+          return (isReceived && t.type === 'transfer') || t.type === 'add_funds';
+        }
+        
         return true;
       })
     : [];
 
   const formatTransaction = (transaction) => {
-    const isSent = transaction.type === "sent" || transaction.transaction_type === "sent";
-    const dateTime = new Date(transaction.created_at || transaction.timestamp);
+    const isSent = transaction.sender_id === user?.id && transaction.type === 'transfer';
+    const isReceived = (transaction.receiver_id === user?.id && transaction.type === 'transfer') || transaction.type === 'add_funds';
+    
+    const dateTime = new Date(transaction.created_at);
+    
+    // Get display name (same as UserHomePage)
+    const displayName = isReceived ? transaction.sender_name : transaction.receiver_name;
+    const name = transaction.type === 'add_funds' 
+      ? 'Added Funds' 
+      : (isReceived ? `From ${displayName}` : `To ${displayName}`);
+
     return {
-      id: transaction.id,
+      id: transaction.id || transaction.transaction_id,
       type: isSent ? "sent" : "received",
-      name:
-        transaction.receiver_name ||
-        transaction.sender_name ||
-        transaction.note ||
-        (isSent ? "Sent Money" : "Received Money"),
+      name: name,
       amount: parseFloat(transaction.amount || 0),
       date: dateTime.toLocaleDateString("en-US"),
       time: dateTime.toLocaleTimeString("en-US"),

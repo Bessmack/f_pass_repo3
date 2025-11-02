@@ -5072,3 +5072,14 @@ button {
 .modal-overlay {
   animation: overlayAppear 0.2s ease-out;
 }
+.add-beneficiary {
+  min-height: 100vh;
+  padding-bottom: 80px;
+  box-sizing: border-box;
+}
+
+.add-beneficiary-form {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 100px; /* Extra space for scrolling */
+}

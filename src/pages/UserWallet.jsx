@@ -1,12 +1,8 @@
-// src/pages/UserWallet.jsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-
-import {
-  Eye, EyeOff, Copy, ArrowLeft, Wallet,
-  ArrowDownToLine, Send, History
-} from "lucide-react";
+import { Eye, EyeOff, Copy, ArrowLeft, Wallet, ArrowDownToLine, Send, History } from "lucide-react";
 import { walletAPI, transactionAPI, formatCurrency } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 export default function UserWallet() {
   const [showBalance, setShowBalance] = useState(true);
@@ -18,7 +14,7 @@ export default function UserWallet() {
   const [transactions, setTransactions] = useState([]);
   const [stats, setStats] = useState({ totalSent: 0, totalReceived: 0 });
   const navigate = useNavigate();
-  
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -33,8 +29,7 @@ export default function UserWallet() {
 
         // ✅ Fetch transactions
         const txResponse = await transactionAPI.getTransactions("all", 50);
-        const transactionsData =
-          txResponse?.transactions || txResponse?.data || txResponse || [];
+        const transactionsData = txResponse?.transactions || txResponse?.data || txResponse || [];
 
         if (!Array.isArray(transactionsData)) {
           console.warn("Unexpected transactions format:", transactionsData);
@@ -43,19 +38,13 @@ export default function UserWallet() {
         } else {
           setTransactions(transactionsData);
 
-          // ✅ Calculate totals inside useEffect
+          // ✅ Calculate totals using correct logic (same as UserHomePage)
           const sent = transactionsData
-            .filter((t) => t.is_sent || t.type === "sent" || t.transaction_type === "sent")
+            .filter(t => t.sender_id === user?.id && t.type === 'transfer')
             .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
 
           const received = transactionsData
-            .filter(
-              (t) =>
-                t.is_received ||
-                t.type === "received" ||
-                t.transaction_type === "received" ||
-                t.type === "add_funds"
-            )
+            .filter(t => (t.receiver_id === user?.id && t.type === 'transfer') || t.type === 'add_funds')
             .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
 
           setStats({ totalSent: sent, totalReceived: received });
@@ -69,8 +58,9 @@ export default function UserWallet() {
     };
 
     fetchData();
-  }, []);
+  }, [user]);
 
+  // ✅ Add the missing handleCopy function
   const handleCopy = () => {
     if (walletData?.wallet_id) {
       navigator.clipboard.writeText(walletData.wallet_id);
@@ -79,44 +69,52 @@ export default function UserWallet() {
     }
   };
 
-  // ✅ Filtering logic
+  // ✅ Correct filtering logic (same as UserHistory)
   const filteredTransactions = Array.isArray(transactions)
-    ? transactions.filter((t) => {
+    ? transactions.filter(t => {
         if (activeTab === "all") return true;
-        if (activeTab === "sent")
-          return t.is_sent || t.type === "sent" || t.transaction_type === "sent";
-        if (activeTab === "received")
-          return (
-            t.is_received ||
-            t.type === "received" ||
-            t.transaction_type === "received" ||
-            t.type === "add_funds"
-          );
+        
+        const isSent = t.sender_id === user?.id;
+        const isReceived = t.receiver_id === user?.id;
+        
+        if (activeTab === "sent") {
+          return isSent && t.type === 'transfer';
+        }
+        
+        if (activeTab === "received") {
+          return (isReceived && t.type === 'transfer') || t.type === 'add_funds';
+        }
+        
         return true;
       })
     : [];
 
-  // ✅ Format transaction display
-  const formatTransaction = (t) => {
-    const type =
-      t.is_sent || t.type === "sent" || t.transaction_type === "sent"
-        ? "sent"
-        : "received";
+  // ✅ Correct format transaction function
+  const formatTransaction = (transaction) => {
+    const isSent = transaction.sender_id === user?.id && transaction.type === 'transfer';
+    const isReceived = (transaction.receiver_id === user?.id && transaction.type === 'transfer') || transaction.type === 'add_funds';
+    
+    const dateTime = new Date(transaction.created_at);
+    
+    // Get display name (same as UserHomePage)
+    const displayName = isReceived ? transaction.sender_name : transaction.receiver_name;
+    const name = transaction.type === 'add_funds' 
+      ? 'Added Funds' 
+      : (isReceived ? `From ${displayName}` : `To ${displayName}`);
+
     return {
-      id: t.transaction_id || t.id,
-      type,
-      name: type === "sent"
-        ? t.receiver_name || "Sent Money"
-        : t.sender_name || (t.type === "add_funds" ? "Added Funds" : "Received Money"),
-      amount: parseFloat(t.amount || 0),
-      date: new Date(t.created_at || t.timestamp).toLocaleString("en-US", {
+      id: transaction.id || transaction.transaction_id,
+      type: isSent ? "sent" : "received",
+      name: name,
+      amount: parseFloat(transaction.amount || 0),
+      date: dateTime.toLocaleDateString("en-US", {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
       }),
-      status: t.status || "Completed",
+      status: transaction.status || "Completed",
     };
   };
 
