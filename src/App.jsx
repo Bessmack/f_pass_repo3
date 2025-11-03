@@ -19,6 +19,7 @@ import TestMpesa from './pages/TestMpesa';
 import { AuthProvider } from './context/AuthContext';
 import EditBeneficiary from './pages/EditBeneficiary';
 import NotFound from './pages/NotFound'; // Import the error page
+import Documentation from './pages/Documentation';
 
 function App() {
   return (
@@ -46,6 +47,7 @@ function App() {
           <Route path="/user/profile" element={<UserProfile />} />
           <Route path="/user/test-mpesa" element={<TestMpesa />} />
           <Route path="/user/edit-beneficiary/:id" element={<EditBeneficiary />} />
+          <Route path="/user/documentation" element={<Documentation />} />
           
           {/* Catch-all route for 404 errors - MUST BE LAST */}
           <Route path="*" element={<NotFound />} />

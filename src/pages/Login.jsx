@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Footer from '../components/Footer';
+import LoginNavbar from '../components/LoginNavbar';
 
 function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -111,6 +112,7 @@ function Login() {
 
   return (
     <>
+    <LoginNavbar/>
       <div className="auth-page-container">
         <div className={`auth-slider-wrapper ${isSignUp ? 'slide-to-signup' : ''}`}>
           
@@ -152,17 +154,6 @@ function Login() {
                 <div className="auth-role-info">
                   <div className="auth-role-name">User</div>
                   <div className="auth-role-description">Personal Account</div>
-                </div>
-              </button>
-              <button
-                type="button"
-                className={`auth-role-btn ${userRole === 'admin' ? 'auth-role-active' : ''}`}
-                onClick={() => setUserRole('admin')}
-              >
-                <span className="auth-role-icon">⚡</span>
-                <div className="auth-role-info">
-                  <div className="auth-role-name">Admin</div>
-                  <div className="auth-role-description">Management Portal</div>
                 </div>
               </button>
             </div>
